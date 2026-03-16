@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0.12 0.01 45;
+    --foreground: 0.95 0.02 85;
+    --card: 0.16 0.012 45;
+    --card-foreground: 0.95 0.02 85;
+    --popover: 0.16 0.012 45;
+    --popover-foreground: 0.95 0.02 85;
+    --primary: 0.78 0.14 85;
+    --primary-foreground: 0.12 0.01 45;
+    --secondary: 0.20 0.015 45;
+    --secondary-foreground: 0.85 0.02 85;
+    --muted: 0.22 0.012 45;
+    --muted-foreground: 0.60 0.02 85;
+    --accent: 0.72 0.16 75;
+    --accent-foreground: 0.12 0.01 45;
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 0.98 0.005 85;
+    --success: 0.55 0.18 145;
+    --success-foreground: 1 0 0;
+    --border: 0.28 0.02 45;
+    --input: 0.28 0.02 45;
+    --ring: 0.78 0.14 85;
+    --radius: 0.5rem;
+    --chart-1: 0.78 0.14 85;
+    --chart-2: 0.72 0.16 75;
+    --chart-3: 0.65 0.12 65;
+    --chart-4: 0.55 0.10 55;
+    --chart-5: 0.45 0.08 45;
+    --sidebar: 0.14 0.01 45;
+    --sidebar-foreground: 0.95 0.02 85;
+    --sidebar-primary: 0.78 0.14 85;
+    --sidebar-primary-foreground: 0.12 0.01 45;
+    --sidebar-accent: 0.20 0.015 45;
+    --sidebar-accent-foreground: 0.85 0.02 85;
+    --sidebar-border: 0.28 0.02 45;
+    --sidebar-ring: 0.78 0.14 85;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .font-display { font-family: 'Playfair Display', serif; }
+  .font-body { font-family: 'Plus Jakarta Sans', sans-serif; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.gold-shimmer {
+  background: linear-gradient(90deg, oklch(0.78 0.14 85), oklch(0.88 0.18 90), oklch(0.95 0.20 95), oklch(0.88 0.18 90), oklch(0.78 0.14 85));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.55 0.20 145 / 0.4); }
+  50% { box-shadow: 0 0 0 10px oklch(0.55 0.20 145 / 0); }
+}
+
+.whatsapp-pulse {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+}
+
+.print-only { display: none; }
