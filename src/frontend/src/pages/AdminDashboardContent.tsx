@@ -53,15 +53,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ExternalBlob } from "../backend";
-import type {
-  AdVideo,
-  Category,
-  DeliveryAgent,
-  Order,
-  Product,
-} from "../backend.d";
-import { OrderStatus } from "../backend.d";
+import type { Category, Order, Product } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import {
   type LocalProduct,
@@ -122,6 +114,46 @@ function saveLocalCategories(cats: LocalCategory[]) {
   localStorage.setItem(LOCAL_CAT_KEY, JSON.stringify(cats));
 }
 
+// ─── Local Delivery Agents Storage ──────────────────────────────────────────
+const LOCAL_AGENTS_KEY = "tkmart_local_agents";
+interface LocalAgent {
+  id: string;
+  name: string;
+  phone: string;
+  status: string;
+  createdAt: number;
+}
+function loadLocalAgents(): LocalAgent[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_AGENTS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function saveLocalAgents(agents: LocalAgent[]) {
+  localStorage.setItem(LOCAL_AGENTS_KEY, JSON.stringify(agents));
+}
+
+// ─── Local Ad Videos Storage ─────────────────────────────────────────────────
+const LOCAL_ADVIDEOS_KEY = "tkmart_local_advideos";
+interface LocalAdVideo {
+  id: string;
+  title: string;
+  videoUrl: string;
+  active: boolean;
+  createdAt: number;
+}
+function loadLocalAdVideos(): LocalAdVideo[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_ADVIDEOS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function saveLocalAdVideos(videos: LocalAdVideo[]) {
+  localStorage.setItem(LOCAL_ADVIDEOS_KEY, JSON.stringify(videos));
+}
+
 // ─── Chat Storage ─────────────────────────────────────────────────────────────
 const CHAT_KEY = "tkmart_chat_messages";
 interface ChatMessage {
@@ -156,6 +188,37 @@ function getOrderCode(orderId: string): string {
     return "";
   }
 }
+// ─── Local Order Storage ──────────────────────────────────────────────────────
+const LOCAL_ORDERS_KEY = "tkmart_orders";
+
+interface LocalOrder {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  address: string;
+  items: Array<{ name: string; quantity: number; price: unknown }>;
+  totalAmount: number;
+  paymentMethod: string;
+  upiTxId: string;
+  status: string;
+  verifCode: string;
+  createdAt: number;
+  deliveryAgent?: string;
+}
+
+function loadLocalOrders(): LocalOrder[] {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_ORDERS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalOrders(orders: LocalOrder[]) {
+  localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(orders));
+  window.dispatchEvent(new StorageEvent("storage", { key: LOCAL_ORDERS_KEY }));
+}
+
 // ─── Payment QR Storage ────────────────────────────────────────────────────
 const PAYMENT_QR_KEY = "tkmart_payment_qr";
 const PAYMENT_UPI_KEY = "tkmart_payment_upi_id";
@@ -285,10 +348,12 @@ export default function AdminDashboardContent() {
 
   // ── data state
   const [products, setProducts] = useState<LocalProduct[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<LocalOrder[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [agents, setAgents] = useState<DeliveryAgent[]>([]);
-  const [adVideos, setAdVideos] = useState<AdVideo[]>([]);
+  const [agents, setAgents] = useState<LocalAgent[]>(() => loadLocalAgents());
+  const [adVideos, setAdVideos] = useState<LocalAdVideo[]>(() =>
+    loadLocalAdVideos(),
+  );
   const [deliveryChargeInput, setDeliveryChargeInput] = useState<string>(() => {
     const stored = localStorage.getItem("tkmart_delivery_charge");
     return stored ? String(Number.parseInt(stored, 10) / 100) : "0";
@@ -320,8 +385,6 @@ export default function AdminDashboardContent() {
   const [loadingProducts] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const loadingCategories = false;
-  const [loadingAgents, setLoadingAgents] = useState(false);
-  const [loadingVideos, setLoadingVideos] = useState(false);
 
   // ── product dialog
   const [productDialogOpen, setProductDialogOpen] = useState(false);
@@ -345,14 +408,15 @@ export default function AdminDashboardContent() {
   // ── agent dialog
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
   const [agentForm, setAgentForm] = useState({ name: "", phone: "" });
-  const [savingAgent, setSavingAgent] = useState(false);
+  const [savingAgent] = useState(false);
 
   // ── ad video dialog
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
-  const [videoForm, setVideoForm] = useState({ title: "", active: true });
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [savingVideo, setSavingVideo] = useState(false);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [videoForm, setVideoForm] = useState({
+    title: "",
+    videoUrl: "",
+    active: true,
+  });
 
   // ── order search
   const [orderPhone, setOrderPhone] = useState("");
@@ -387,39 +451,23 @@ export default function AdminDashboardContent() {
     setCategories(loadLocalCategories() as unknown as Category[]);
   };
 
-  const fetchAgents = async () => {
-    if (!actor) return;
-    setLoadingAgents(true);
-    try {
-      const data = await actor.getDeliveryAgents();
-      setAgents(data);
-    } catch {
-      toast.error("Failed to load delivery agents");
-    } finally {
-      setLoadingAgents(false);
-    }
+  const fetchAgents = () => {
+    setAgents(loadLocalAgents());
   };
 
-  const fetchAdVideos = async () => {
-    if (!actor) return;
-    setLoadingVideos(true);
-    try {
-      const data = await actor.getAdVideos();
-      setAdVideos(data);
-    } catch {
-      toast.error("Failed to load ad videos");
-    } finally {
-      setLoadingVideos(false);
-    }
+  const fetchAdVideos = () => {
+    setAdVideos(loadLocalAdVideos());
   };
 
-  const fetchOrders = async (phone?: string) => {
-    if (!actor) return;
+  const fetchOrders = (phone?: string) => {
     setLoadingOrders(true);
     try {
-      const data = phone
-        ? await actor.getOrdersByPhone(phone)
-        : await actor.getOrdersByPhone("");
+      let data = loadLocalOrders();
+      if (phone?.trim()) {
+        data = data.filter((o) =>
+          o.customerPhone?.includes(phone?.trim() ?? ""),
+        );
+      }
       setOrders(data);
     } catch {
       toast.error("Failed to load orders");
@@ -430,14 +478,19 @@ export default function AdminDashboardContent() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
+    fetchOrders();
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === LOCAL_ORDERS_KEY) fetchOrders();
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
     if (!actor) return;
     fetchCategories();
-    Promise.all([
-      fetchProducts(),
-      fetchAgents(),
-      fetchAdVideos(),
-      fetchOrders(),
-    ]);
+    Promise.all([fetchProducts(), fetchAgents(), fetchAdVideos()]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor]);
 
@@ -601,71 +654,98 @@ export default function AdminDashboardContent() {
 
   // ─── Agent handlers ────────────────────────────────────────────────────────
 
-  const handleCreateAgent = async () => {
-    if (!actor || !agentForm.name.trim() || !agentForm.phone.trim()) {
+  const handleCreateAgent = () => {
+    if (!agentForm.name.trim() || !agentForm.phone.trim()) {
       toast.error("Name and phone are required.");
       return;
     }
-    setSavingAgent(true);
-    try {
-      await actor.createDeliveryAgent(
-        agentForm.name.trim(),
-        agentForm.phone.trim(),
-      );
-      toast.success("Delivery agent added");
-      setAgentForm({ name: "", phone: "" });
-      setAgentDialogOpen(false);
-      await fetchAgents();
-    } catch {
-      toast.error("Failed to add agent");
-    } finally {
-      setSavingAgent(false);
-    }
+    const all = loadLocalAgents();
+    const newAgent: LocalAgent = {
+      id: `agent-${Date.now()}`,
+      name: agentForm.name.trim(),
+      phone: agentForm.phone.trim(),
+      status: "Active",
+      createdAt: Date.now(),
+    };
+    all.push(newAgent);
+    saveLocalAgents(all);
+    setAgents(all);
+    toast.success("Delivery agent added");
+    setAgentForm({ name: "", phone: "" });
+    setAgentDialogOpen(false);
   };
 
   // ─── Ad video handlers ─────────────────────────────────────────────────────
 
-  const handleAddVideo = async () => {
-    if (!actor || !videoForm.title.trim() || !videoFile) {
-      toast.error("Title and video file are required.");
+  const handleAddVideo = () => {
+    if (!videoForm.title.trim() || !videoForm.videoUrl.trim()) {
+      toast.error("Title and video URL are required.");
       return;
     }
-    setSavingVideo(true);
-    try {
-      const buf = await videoFile.arrayBuffer();
-      const blob = ExternalBlob.fromBytes(new Uint8Array(buf));
-      await actor.addAdVideo(videoForm.title.trim(), blob, videoForm.active);
-      toast.success("Ad video added");
-      setVideoForm({ title: "", active: true });
-      setVideoFile(null);
-      setVideoDialogOpen(false);
-      await fetchAdVideos();
-    } catch {
-      toast.error("Failed to add video");
-    } finally {
-      setSavingVideo(false);
-    }
+    const all = loadLocalAdVideos();
+    const newVideo: LocalAdVideo = {
+      id: `video-${Date.now()}`,
+      title: videoForm.title.trim(),
+      videoUrl: videoForm.videoUrl.trim(),
+      active: videoForm.active,
+      createdAt: Date.now(),
+    };
+    all.push(newVideo);
+    saveLocalAdVideos(all);
+    setAdVideos(all);
+    toast.success("Ad video added");
+    setVideoForm({ title: "", videoUrl: "", active: true });
+    setVideoDialogOpen(false);
+  };
+
+  // ─── Delete agent ──────────────────────────────────────────────────────────
+  const handleDeleteAgent = (id: string) => {
+    const updated = loadLocalAgents().filter((a) => a.id !== id);
+    saveLocalAgents(updated);
+    setAgents(updated);
+    toast.success("Agent removed");
+  };
+
+  // ─── Delete ad video ────────────────────────────────────────────────────────
+  const handleDeleteVideo = (id: string) => {
+    const updated = loadLocalAdVideos().filter((v) => v.id !== id);
+    saveLocalAdVideos(updated);
+    setAdVideos(updated);
+    toast.success("Video removed");
   };
 
   // ─── Order handlers ────────────────────────────────────────────────────────
 
-  const handleStatusChange = async (orderId: bigint, status: OrderStatus) => {
-    if (!actor) return;
+  const handleStatusChange = (orderId: string, status: string) => {
     try {
-      await actor.updateOrderStatus(orderId, status);
+      const allOrders = loadLocalOrders();
+      const updated = allOrders.map((o) => {
+        if (o.id === orderId) {
+          return {
+            ...o,
+            status,
+            verifCode: status === "delivered" ? "" : o.verifCode,
+          };
+        }
+        return o;
+      });
+      saveLocalOrders(updated);
       toast.success("Order status updated");
-      await fetchOrders(orderPhone || undefined);
+      fetchOrders(orderPhone || undefined);
     } catch {
       toast.error("Failed to update status");
     }
   };
 
-  const handleAssignAgent = async (orderId: bigint, agentId: string) => {
-    if (!actor) return;
+  const handleAssignAgent = (orderId: string, agentId: string) => {
     try {
-      await actor.assignOrderToAgent(orderId, BigInt(agentId));
+      const allOrders = loadLocalOrders();
+      const updated = allOrders.map((o) =>
+        o.id === orderId ? { ...o, deliveryAgent: agentId } : o,
+      );
+      saveLocalOrders(updated);
       toast.success("Agent assigned");
-      await fetchOrders(orderPhone || undefined);
+      fetchOrders(orderPhone || undefined);
     } catch {
       toast.error("Failed to assign agent");
     }
@@ -1166,10 +1246,7 @@ export default function AdminDashboardContent() {
             ) : (
               <div className="space-y-3" data-ocid="admin.orders.list">
                 {orders.map((order, i) => (
-                  <Card
-                    key={order.id.toString()}
-                    data-ocid={`admin.orders.item.${i + 1}`}
-                  >
+                  <Card key={order.id} data-ocid={`admin.orders.item.${i + 1}`}>
                     <CardContent className="py-4">
                       <div className="flex flex-wrap gap-4 items-start justify-between">
                         <div>
@@ -1181,10 +1258,10 @@ export default function AdminDashboardContent() {
                             {order.address}
                           </p>
                           <p className="text-sm font-semibold mt-1">
-                            ₹{order.totalAmount.toString()}
+                            ₹{(order.totalAmount / 100).toFixed(2)}
                           </p>
                           {(() => {
-                            const code = getOrderCode(order.id.toString());
+                            const code = getOrderCode(order.id);
                             if (!code) return null;
                             return (
                               <div className="mt-2 flex items-center gap-2">
@@ -1212,7 +1289,7 @@ export default function AdminDashboardContent() {
                           <Select
                             value={order.status}
                             onValueChange={(v) =>
-                              handleStatusChange(order.id, v as OrderStatus)
+                              handleStatusChange(order.id, v)
                             }
                           >
                             <SelectTrigger
@@ -1222,9 +1299,14 @@ export default function AdminDashboardContent() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {Object.values(OrderStatus).map((s) => (
+                              {[
+                                "pending",
+                                "confirmed",
+                                "shipped",
+                                "delivered",
+                              ].map((s) => (
                                 <SelectItem key={s} value={s}>
-                                  {s}
+                                  {s.charAt(0).toUpperCase() + s.slice(1)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1243,18 +1325,15 @@ export default function AdminDashboardContent() {
                             </SelectTrigger>
                             <SelectContent>
                               {agents.map((a) => (
-                                <SelectItem
-                                  key={a.id.toString()}
-                                  value={a.id.toString()}
-                                >
+                                <SelectItem key={a.id} value={a.id}>
                                   {a.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                           {(() => {
-                            const code = getOrderCode(order.id.toString());
-                            if (!code || order.status === OrderStatus.delivered)
+                            const code = getOrderCode(order.id);
+                            if (!code || order.status === "delivered")
                               return null;
                             return (
                               <Button
@@ -1267,17 +1346,14 @@ export default function AdminDashboardContent() {
                                     `Enter 4-digit delivery code for Order #${order.id}:`,
                                   );
                                   if (entered === code) {
-                                    handleStatusChange(
-                                      order.id,
-                                      OrderStatus.delivered,
-                                    );
+                                    handleStatusChange(order.id, "delivered");
                                     try {
                                       const codes = JSON.parse(
                                         localStorage.getItem(
                                           "tkmart_order_codes",
                                         ) ?? "{}",
                                       );
-                                      delete codes[order.id.toString()];
+                                      delete codes[order.id];
                                       localStorage.setItem(
                                         "tkmart_order_codes",
                                         JSON.stringify(codes),
@@ -1539,14 +1615,7 @@ export default function AdminDashboardContent() {
               </Dialog>
             </div>
 
-            {loadingAgents ? (
-              <div
-                className="flex justify-center py-12"
-                data-ocid="admin.agents.loading_state"
-              >
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : agents.length === 0 ? (
+            {agents.length === 0 ? (
               <Card data-ocid="admin.agents.empty_state">
                 <CardContent className="py-12 text-center text-muted-foreground">
                   No delivery agents yet.
@@ -1559,19 +1628,31 @@ export default function AdminDashboardContent() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead>ID</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {agents.map((a, i) => (
                       <TableRow
-                        key={a.id.toString()}
+                        key={a.id}
                         data-ocid={`admin.agents.item.${i + 1}`}
                       >
                         <TableCell className="font-medium">{a.name}</TableCell>
                         <TableCell>{a.phone}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {a.id.toString()}
+                        <TableCell>
+                          <Badge variant="default">{a.status}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            data-ocid={`admin.agents.delete_button.${i + 1}`}
+                            onClick={() => handleDeleteAgent(a.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1614,32 +1695,18 @@ export default function AdminDashboardContent() {
                       />
                     </div>
                     <div>
-                      <Label>Video File</Label>
-                      <input
-                        ref={videoInputRef}
-                        type="file"
-                        accept="video/*"
-                        className="hidden"
+                      <Label>Video URL</Label>
+                      <Input
+                        value={videoForm.videoUrl}
                         onChange={(e) =>
-                          setVideoFile(e.target.files?.[0] ?? null)
+                          setVideoForm((f) => ({
+                            ...f,
+                            videoUrl: e.target.value,
+                          }))
                         }
+                        placeholder="https://youtube.com/... or video link"
+                        data-ocid="admin.video.url.input"
                       />
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => videoInputRef.current?.click()}
-                          data-ocid="admin.video.upload_button"
-                        >
-                          {videoFile ? "Change File" : "Select Video"}
-                        </Button>
-                        {videoFile && (
-                          <span className="text-sm text-muted-foreground">
-                            {videoFile.name}
-                          </span>
-                        )}
-                      </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Label htmlFor="video-active">Active</Label>
@@ -1663,12 +1730,8 @@ export default function AdminDashboardContent() {
                     </Button>
                     <Button
                       onClick={handleAddVideo}
-                      disabled={savingVideo}
                       data-ocid="admin.video.save_button"
                     >
-                      {savingVideo ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : null}
                       Upload
                     </Button>
                   </DialogFooter>
@@ -1676,14 +1739,7 @@ export default function AdminDashboardContent() {
               </Dialog>
             </div>
 
-            {loadingVideos ? (
-              <div
-                className="flex justify-center py-12"
-                data-ocid="admin.videos.loading_state"
-              >
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : adVideos.length === 0 ? (
+            {adVideos.length === 0 ? (
               <Card data-ocid="admin.videos.empty_state">
                 <CardContent className="py-12 text-center text-muted-foreground">
                   No ad videos yet.
@@ -1695,19 +1751,37 @@ export default function AdminDashboardContent() {
                 data-ocid="admin.videos.list"
               >
                 {adVideos.map((v, i) => (
-                  <Card
-                    key={v.id.toString()}
-                    data-ocid={`admin.videos.item.${i + 1}`}
-                  >
+                  <Card key={v.id} data-ocid={`admin.videos.item.${i + 1}`}>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">
-                        {v.title}
-                      </CardTitle>
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-sm font-medium">
+                          {v.title}
+                        </CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive flex-shrink-0"
+                          data-ocid={`admin.videos.delete_button.${i + 1}`}
+                          onClick={() => handleDeleteVideo(v.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-2">
                       <Badge variant={v.active ? "default" : "secondary"}>
                         {v.active ? "Active" : "Inactive"}
                       </Badge>
+                      {v.videoUrl && (
+                        <a
+                          href={v.videoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-xs text-primary truncate hover:underline"
+                        >
+                          {v.videoUrl}
+                        </a>
+                      )}
                     </CardContent>
                   </Card>
                 ))}

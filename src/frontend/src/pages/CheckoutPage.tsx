@@ -15,7 +15,6 @@ import { CheckCircle, Loader2, MapPin } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useActor } from "../hooks/useActor";
 import { useCart } from "../hooks/useCart";
 import { getSavedAddresses } from "./CustomerAccountPage";
 
@@ -41,11 +40,10 @@ type Step = "address" | "payment" | "confirm";
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCart();
-  const { actor } = useActor();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("address");
   const [loading, setLoading] = useState(false);
-  const [orderId, setOrderId] = useState<bigint | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [verifCode, setVerifCode] = useState<string>("");
 
   const savedAddresses = getSavedAddresses();
@@ -162,31 +160,57 @@ export default function CheckoutPage() {
 
   const stepIndex = { address: 0, payment: 1, confirm: 2 };
 
-  async function handlePlaceOrder() {
-    if (!actor) return;
+  function handlePlaceOrder() {
+    // Validate delivery address and phone before submitting
+    const address = buildAddress();
+    if (!address.trim() || !form.phone.trim()) {
+      toast.error("Please enter delivery address and phone number.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const paymentMethod =
-        payment === "cod"
-          ? { __kind__: "cod" as const, cod: null }
-          : { __kind__: "upi" as const, upi: { transactionId: upiTxId } };
-
-      const id = await actor.placeOrder(
-        form.name,
-        form.altPhone ? `${form.phone} / Alt: ${form.altPhone}` : form.phone,
-        buildAddress(),
-        items.map((i) => ({
-          productId: i.productId,
-          quantity: BigInt(i.quantity),
-          price: i.price,
-        })),
-        total + deliveryCharge,
-        paymentMethod,
-      );
-      setOrderId(id);
+      const newOrderId = `TK${Date.now()}`;
       const code = generateVerifCode();
+
+      const session = JSON.parse(
+        localStorage.getItem("tkmart_session") ?? "null",
+      );
+      const customerName = form.name || session?.name || "Customer";
+
+      const order = {
+        id: newOrderId,
+        customerName,
+        customerPhone: form.altPhone
+          ? `${form.phone} / Alt: ${form.altPhone}`
+          : form.phone,
+        address,
+        items,
+        totalAmount: Number(total + deliveryCharge),
+        paymentMethod: payment,
+        upiTxId: payment === "upi" ? upiTxId : "",
+        status: "pending",
+        verifCode: code,
+        createdAt: Date.now(),
+      };
+
+      // Save to localStorage orders array
+      const existingOrders = JSON.parse(
+        localStorage.getItem("tkmart_orders") ?? "[]",
+      );
+      existingOrders.unshift(order);
+      localStorage.setItem("tkmart_orders", JSON.stringify(existingOrders));
+
+      // Also save code in legacy format for compatibility
+      saveOrderCode(newOrderId, code);
+
+      // Dispatch storage event so admin panel updates in real time
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "tkmart_orders" }),
+      );
+
+      setOrderId(newOrderId);
       setVerifCode(code);
-      saveOrderCode(id.toString(), code);
       clearCart();
       setStep("confirm");
       toast.success("Order placed successfully!");
@@ -552,9 +576,7 @@ export default function CheckoutPage() {
             </h2>
             <p className="text-muted-foreground mb-4">
               Your order ID is{" "}
-              <span className="font-bold text-foreground">
-                #{orderId.toString()}
-              </span>
+              <span className="font-bold text-foreground">#{orderId}</span>
             </p>
             {verifCode && (
               <div

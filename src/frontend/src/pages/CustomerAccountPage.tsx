@@ -100,9 +100,49 @@ async function fetchAddressFromCoords(
   }
 }
 
+// ─── Local Order Type ─────────────────────────────────────────────────────────
+interface LocalOrder {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  address: string;
+  items: Array<{ name: string; quantity: number }>;
+  totalAmount: number;
+  paymentMethod: string;
+  upiTxId: string;
+  status: string;
+  verifCode: string;
+  createdAt: number;
+}
+
+function getStatusClasses(status: string): string {
+  if (status === "delivered") return "bg-green-100 text-green-700";
+  if (status === "shipped") return "bg-blue-100 text-blue-700";
+  if (status === "confirmed") return "bg-yellow-100 text-yellow-700";
+  return "bg-gray-100 text-gray-700";
+}
+
 export default function CustomerAccountPage() {
   const navigate = useNavigate();
   const session = getCustomerSession();
+
+  const [myOrders] = useState<LocalOrder[]>(() => {
+    try {
+      const all: LocalOrder[] = JSON.parse(
+        localStorage.getItem("tkmart_orders") ?? "[]",
+      );
+      const phone = session?.phone || "";
+      const email = session?.email || "";
+      return all.filter(
+        (o) =>
+          (phone && o.customerPhone?.includes(phone)) ||
+          (email && o.customerEmail === email),
+      );
+    } catch {
+      return [];
+    }
+  });
 
   const [name, setName] = useState(session?.name || "");
   const [phone, setPhone] = useState(session?.phone || "");
@@ -481,7 +521,6 @@ export default function CustomerAccountPage() {
         </CardContent>
       </Card>
 
-      {/* Orders Card */}
       {/* My E-Books Section */}
       {(() => {
         const myEbooks = getMyEBooksCA();
@@ -539,6 +578,7 @@ export default function CustomerAccountPage() {
         );
       })()}
 
+      {/* Orders Card */}
       <Card data-ocid="account.orders.card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -547,23 +587,69 @@ export default function CustomerAccountPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className="text-center py-8 text-muted-foreground"
-            data-ocid="account.orders.empty_state"
-          >
-            <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-foreground mb-1">
-              Track your orders easily
-            </p>
-            <p className="text-sm mb-4">
-              Use the Track Order page to check your order status.
-            </p>
-            <Link to="/track" data-ocid="account.track.link">
-              <Button variant="outline" size="sm">
-                Track Order
-              </Button>
-            </Link>
-          </div>
+          {myOrders.length === 0 ? (
+            <div
+              className="text-center py-8 text-muted-foreground"
+              data-ocid="account.orders.empty_state"
+            >
+              <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-foreground mb-1">No orders yet</p>
+              <p className="text-sm">Your placed orders will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3" data-ocid="account.orders.list">
+              {myOrders.map((order, i) => (
+                <div
+                  key={order.id}
+                  className="border rounded-lg p-4"
+                  data-ocid={`account.orders.item.${i + 1}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                    <div>
+                      <p className="font-semibold text-sm">Order #{order.id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusClasses(order.status)}`}
+                    >
+                      {order.status.charAt(0).toUpperCase() +
+                        order.status.slice(1)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {order.items
+                      ?.map((it) => `${it.name} x${it.quantity}`)
+                      .join(", ")}
+                  </p>
+                  <p className="text-sm font-semibold">
+                    Total: ₹{(order.totalAmount / 100).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {order.address}
+                  </p>
+                  {order.verifCode && order.status !== "delivered" && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        Delivery Code:
+                      </span>
+                      <span
+                        className="font-mono font-bold text-sm"
+                        style={{ color: "oklch(0.78 0.14 85)" }}
+                      >
+                        {order.verifCode}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

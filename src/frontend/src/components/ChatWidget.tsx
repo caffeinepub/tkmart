@@ -89,9 +89,11 @@ export default function ChatWidget() {
     loadFromStorage();
     const handler = () => loadFromStorage();
     window.addEventListener("tkmart_chat_updated", handler);
+    window.addEventListener("storage", handler);
     const interval = setInterval(() => loadFromStorage(), 2000);
     return () => {
       window.removeEventListener("tkmart_chat_updated", handler);
+      window.removeEventListener("storage", handler);
       clearInterval(interval);
     };
   }, []);
@@ -193,7 +195,7 @@ export default function ChatWidget() {
                 type="button"
                 data-ocid="chat.minimize_button"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-center w-7 h-7 rounded bg-muted hover:bg-primary/20 text-muted-foreground hover:text-foreground transition-colors border border-border"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/20 hover:bg-primary/40 text-primary transition-colors border border-primary/50 font-bold"
                 aria-label="Minimize chat"
                 title="Minimize"
               >
@@ -206,7 +208,7 @@ export default function ChatWidget() {
                   setOpen(false);
                   setDismissed(true);
                 }}
-                className="flex items-center justify-center w-7 h-7 rounded bg-muted hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors border border-border"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-destructive/20 hover:bg-destructive/40 text-destructive transition-colors border border-destructive/50"
                 aria-label="Close chat"
                 title="Close"
               >
