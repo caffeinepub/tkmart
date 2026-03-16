@@ -63,6 +63,14 @@ import type {
 } from "../backend.d";
 import { OrderStatus } from "../backend.d";
 import { useActor } from "../hooks/useActor";
+import {
+  type LocalProduct,
+  createLocalProduct,
+  deleteLocalProduct,
+  fileToBase64,
+  loadLocalProducts,
+  updateLocalProduct,
+} from "../hooks/useLocalProducts";
 import { clearAdminSession } from "./AdminLoginPage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -276,7 +284,7 @@ export default function AdminDashboardContent() {
   const navigate = useNavigate();
 
   // ── data state
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<LocalProduct[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [agents, setAgents] = useState<DeliveryAgent[]>([]);
@@ -309,7 +317,7 @@ export default function AdminDashboardContent() {
   const [editingEbook, setEditingEbook] = useState<EBook | null>(null);
 
   // ── loading
-  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingProducts] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const loadingCategories = false;
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -317,7 +325,9 @@ export default function AdminDashboardContent() {
 
   // ── product dialog
   const [productDialogOpen, setProductDialogOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<LocalProduct | null>(
+    null,
+  );
   const [productForm, setProductForm] = useState<ProductForm>(
     emptyProductForm(),
   );
@@ -369,17 +379,8 @@ export default function AdminDashboardContent() {
 
   // ─── Fetch helpers ─────────────────────────────────────────────────────────
 
-  const fetchProducts = async () => {
-    if (!actor) return;
-    setLoadingProducts(true);
-    try {
-      const data = await actor.getAllProducts();
-      setProducts(data);
-    } catch {
-      toast.error("Failed to load products");
-    } finally {
-      setLoadingProducts(false);
-    }
+  const fetchProducts = () => {
+    setProducts(loadLocalProducts());
   };
 
   const fetchCategories = () => {
@@ -455,103 +456,72 @@ export default function AdminDashboardContent() {
     setProductDialogOpen(true);
   };
 
-  const openEditProduct = (p: Product) => {
+  const openEditProduct = (p: LocalProduct) => {
     setEditingProduct(p);
     setProductForm({
       name: p.name,
       description: p.description,
-      price: p.price.toString(),
+      price: (p.price / 100).toString(),
       category:
-        categories.find((c) => String(c.id) === String(p.category))?.name ??
-        p.category.toString(),
+        (p.categoryName ||
+          categories.find((c) => Number(c.id) === p.category)?.name) ??
+        "",
       stock: p.stock.toString(),
       imageFile: null,
-      imageUrl: p.image.getDirectURL(),
+      imageUrl: p.imageUrl,
     });
     setProductDialogOpen(true);
   };
 
   const handleSaveProduct = async () => {
-    if (!actor) return;
     if (!productForm.name || !productForm.price || !productForm.category) {
       toast.error("Name, price and category are required.");
       return;
     }
     setSavingProduct(true);
     try {
-      let imageBlob: ExternalBlob;
+      let imageUrl = productForm.imageUrl;
       if (productForm.imageFile) {
-        const buf = await productForm.imageFile.arrayBuffer();
-        imageBlob = ExternalBlob.fromBytes(new Uint8Array(buf));
-      } else if (editingProduct) {
-        imageBlob = editingProduct.image as any;
-      } else {
+        imageUrl = await fileToBase64(productForm.imageFile);
+      } else if (!imageUrl && !editingProduct) {
         toast.error("Please select a product image.");
         setSavingProduct(false);
         return;
       }
-
-      const price = BigInt(Math.round(Number(productForm.price)));
-      const stock = BigInt(Math.round(Number(productForm.stock) || 0));
+      const price = Math.round(Number(productForm.price) * 100);
+      const stock = Math.round(Number(productForm.stock) || 0);
       let matchedCat = categories.find(
         (c) =>
           c.name.toLowerCase() === productForm.category.trim().toLowerCase(),
       );
-      if (!matchedCat) {
-        // Auto-create the category on backend and in localStorage
-        try {
-          const newBackendId = await actor.createCategory(
-            productForm.category.trim(),
-          );
-          const newLocalCat: LocalCategory = {
-            id: Number(newBackendId),
-            name: productForm.category.trim(),
-            slug: productForm.category
-              .trim()
-              .toLowerCase()
-              .replace(/\s+/g, "-"),
-          };
-          const updatedCats = [...loadLocalCategories(), newLocalCat];
-          saveLocalCategories(updatedCats);
-          setCategories(updatedCats as unknown as Category[]);
-          matchedCat = newLocalCat as unknown as Category;
-        } catch {
-          console.error(
-            "Category creation failed, using fallback categoryId=0",
-          );
-          matchedCat = {
-            id: 0,
-            name: productForm.category.trim(),
-            slug: toSlug(productForm.category.trim()),
-          } as unknown as Category;
-        }
-      }
-      const categoryId = BigInt(matchedCat.id);
+      let catId = matchedCat ? Number(matchedCat.id) : 0;
+      let catName = matchedCat?.name ?? productForm.category.trim();
 
       if (editingProduct) {
-        await actor.updateProduct(
-          editingProduct.id,
-          productForm.name,
-          productForm.description,
+        updateLocalProduct(editingProduct.id, {
+          name: productForm.name,
+          description: productForm.description,
           price,
-          categoryId,
+          category: catId,
+          categoryName: catName,
           stock,
-          imageBlob,
-        );
+          imageUrl: imageUrl || editingProduct.imageUrl,
+        });
         toast.success("Product updated");
       } else {
-        await actor.createProduct(
-          productForm.name,
-          productForm.description,
+        createLocalProduct({
+          name: productForm.name,
+          description: productForm.description,
           price,
-          categoryId,
+          category: catId,
+          categoryName: catName,
           stock,
-          imageBlob,
-        );
+          imageUrl,
+        });
         toast.success("Product created");
       }
       setProductDialogOpen(false);
-      await fetchProducts();
+      fetchProducts();
     } catch (e) {
       toast.error("Failed to save product");
       console.error(e);
@@ -560,16 +530,11 @@ export default function AdminDashboardContent() {
     }
   };
 
-  const handleDeleteProduct = async (id: bigint) => {
-    if (!actor) return;
+  const handleDeleteProduct = (id: number) => {
     if (!confirm("Delete this product?")) return;
-    try {
-      await actor.deleteProduct(id);
-      toast.success("Product deleted");
-      await fetchProducts();
-    } catch {
-      toast.error("Failed to delete product");
-    }
+    deleteLocalProduct(id);
+    toast.success("Product deleted");
+    fetchProducts();
   };
 
   // ─── Category handlers ────────────────────────────────────────────────────
@@ -758,8 +723,8 @@ export default function AdminDashboardContent() {
     loadChat();
   };
 
-  const getCategoryName = (id: bigint) =>
-    categories.find((c) => String(c.id) === String(id))?.name ?? `#${id}`;
+  const getCategoryName = (id: number) =>
+    categories.find((c) => Number(c.id) === id)?.name ?? "Unknown";
 
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-500/20 text-yellow-400",
@@ -918,13 +883,13 @@ export default function AdminDashboardContent() {
                   <TableBody>
                     {products.map((p, i) => (
                       <TableRow
-                        key={p.id.toString()}
+                        key={String(p.id)}
                         data-ocid={`admin.products.item.${i + 1}`}
                       >
                         <TableCell className="font-medium">{p.name}</TableCell>
                         <TableCell>{getCategoryName(p.category)}</TableCell>
-                        <TableCell>₹{p.price.toString()}</TableCell>
-                        <TableCell>{p.stock.toString()}</TableCell>
+                        <TableCell>₹{(p.price / 100).toFixed(2)}</TableCell>
+                        <TableCell>{String(p.stock)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-2 justify-end">
                             <Button

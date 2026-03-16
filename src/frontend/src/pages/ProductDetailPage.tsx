@@ -1,31 +1,38 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Minus, Plus, ShoppingCart } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useActor } from "../hooks/useActor";
 import { useCart } from "../hooks/useCart";
+import type { LocalProduct } from "../hooks/useLocalProducts";
+import { getLocalProduct } from "../hooks/useLocalProducts";
 
-function formatPrice(price: bigint) {
-  return `₹${(Number(price) / 100).toFixed(2)}`;
+function formatPrice(price: number) {
+  return `₹${(price / 100).toFixed(2)}`;
 }
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { actor } = useActor();
   const { addItem, items, updateQuantity } = useCart();
   const [qty, setQty] = useState(1);
+  const [product, setProduct] = useState<LocalProduct | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: product, isLoading } = useQuery({
-    queryKey: ["product", id],
-    queryFn: () => actor!.getProduct(BigInt(id!)),
-    enabled: !!actor && !!id,
-  });
+  useEffect(() => {
+    if (id) {
+      setProduct(getLocalProduct(Number(id)));
+    }
+    setIsLoading(false);
+    const handler = () => {
+      if (id) setProduct(getLocalProduct(Number(id)));
+    };
+    window.addEventListener("tkmart_products_updated", handler);
+    return () => window.removeEventListener("tkmart_products_updated", handler);
+  }, [id]);
 
-  const cartItem = items.find((i) => i.productId === product?.id);
+  const cartItem = items.find((i) => i.productId === BigInt(product?.id ?? 0));
 
   if (isLoading)
     return (
@@ -62,7 +69,7 @@ export default function ProductDetailPage() {
       <div className="grid md:grid-cols-2 gap-8">
         <div className="aspect-square rounded-xl overflow-hidden bg-muted">
           <img
-            src={product.image.getDirectURL()}
+            src={product.imageUrl || "/placeholder.png"}
             alt={product.name}
             className="w-full h-full object-cover"
             onError={(e) => {
@@ -72,7 +79,7 @@ export default function ProductDetailPage() {
         </div>
         <div className="flex flex-col justify-center">
           <Badge variant="secondary" className="w-fit mb-3">
-            Category #{product.category.toString()}
+            {product.categoryName || `Category #${product.category}`}
           </Badge>
           <h1 className="font-display text-3xl font-bold mb-3">
             {product.name}
@@ -82,9 +89,9 @@ export default function ProductDetailPage() {
             {formatPrice(product.price)}
           </p>
           <p className="text-sm text-muted-foreground mb-6">
-            {product.stock > 0n ? (
+            {product.stock > 0 ? (
               <span className="text-success font-medium">
-                In Stock ({product.stock.toString()} left)
+                In Stock ({product.stock} left)
               </span>
             ) : (
               <span className="text-destructive">Out of Stock</span>
@@ -116,7 +123,7 @@ export default function ProductDetailPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  updateQuantity(product.id, cartItem.quantity - 1)
+                  updateQuantity(BigInt(product.id), cartItem.quantity - 1)
                 }
                 data-ocid="product.dec.button"
               >
@@ -128,7 +135,7 @@ export default function ProductDetailPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  updateQuantity(product.id, cartItem.quantity + 1)
+                  updateQuantity(BigInt(product.id), cartItem.quantity + 1)
                 }
                 data-ocid="product.inc.button"
               >
@@ -138,21 +145,21 @@ export default function ProductDetailPage() {
           ) : (
             <Button
               size="lg"
-              disabled={product.stock <= 0n}
+              disabled={product.stock <= 0}
               onClick={() => {
                 for (let i = 0; i < qty; i++)
                   addItem({
-                    productId: product.id,
+                    productId: BigInt(product.id),
                     name: product.name,
-                    price: product.price,
-                    image: product.image.getDirectURL(),
+                    price: BigInt(product.price),
+                    image: product.imageUrl,
                   });
                 toast.success(`${product.name} added to cart`);
               }}
               data-ocid="product.addcart.button"
             >
               <ShoppingCart className="h-5 w-5 mr-2" />
-              {product.stock <= 0n ? "Out of Stock" : "Add to Cart"}
+              {product.stock <= 0 ? "Out of Stock" : "Add to Cart"}
             </Button>
           )}
         </div>

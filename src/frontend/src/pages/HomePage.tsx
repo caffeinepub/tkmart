@@ -3,14 +3,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Quote, ShoppingCart } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import type { Product } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useCart } from "../hooks/useCart";
+import type { LocalProduct } from "../hooks/useLocalProducts";
+import { loadLocalProducts } from "../hooks/useLocalProducts";
 
-function formatPrice(price: bigint) {
-  return `₹${(Number(price) / 100).toFixed(2)}`;
+function formatPrice(price: number) {
+  return `₹${(price / 100).toFixed(2)}`;
 }
 
 const SKELETON_KEYS = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -24,11 +26,16 @@ export default function HomePage() {
   const { actor } = useActor();
   const { addItem } = useCart();
 
-  const { data: products, isLoading } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => actor!.getAllProducts(),
-    enabled: !!actor,
-  });
+  const [products, setProducts] = useState<LocalProduct[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    setProducts(loadLocalProducts());
+    setIsLoading(false);
+    const handler = () => setProducts(loadLocalProducts());
+    window.addEventListener("tkmart_products_updated", handler);
+    return () => window.removeEventListener("tkmart_products_updated", handler);
+  }, []);
 
   const { data: adVideos } = useQuery({
     queryKey: ["adVideos"],
@@ -36,12 +43,12 @@ export default function HomePage() {
     enabled: !!actor,
   });
 
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = (product: LocalProduct) => {
     addItem({
-      productId: product.id,
+      productId: BigInt(product.id),
       name: product.name,
-      price: product.price,
-      image: product.image.getDirectURL(),
+      price: BigInt(product.price),
+      image: product.imageUrl,
     });
     toast.success(`${product.name} added to cart`);
   };
@@ -205,7 +212,7 @@ export default function HomePage() {
             >
               {(products?.slice(0, 8) ?? []).map((product, idx) => (
                 <Card
-                  key={product.id.toString()}
+                  key={String(product.id)}
                   className="group hover:border-primary/50 transition-all duration-300 bg-card border-border overflow-hidden"
                   data-ocid={`home.product.item.${idx + 1}`}
                 >
@@ -213,7 +220,7 @@ export default function HomePage() {
                     <Link to={`/products/${product.id}`}>
                       <div className="aspect-square overflow-hidden bg-muted">
                         <img
-                          src={product.image.getDirectURL()}
+                          src={product.imageUrl || "/placeholder.png"}
                           alt={product.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           onError={handleImageError}

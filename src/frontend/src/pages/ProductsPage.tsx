@@ -2,17 +2,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
 import { Search, ShoppingCart } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import type { Product } from "../backend.d";
-import { useActor } from "../hooks/useActor";
 import { useCart } from "../hooks/useCart";
+import type { LocalProduct } from "../hooks/useLocalProducts";
+import { loadLocalProducts } from "../hooks/useLocalProducts";
 
-function formatPrice(price: bigint) {
-  return `₹${(Number(price) / 100).toFixed(2)}`;
+function formatPrice(price: number) {
+  return `₹${(price / 100).toFixed(2)}`;
 }
 
 const SKELETON_KEYS = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -22,24 +21,32 @@ function handleImageError(e: React.SyntheticEvent<HTMLImageElement>) {
 }
 
 export default function ProductsPage() {
-  const { actor } = useActor();
   const { addItem } = useCart();
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<bigint | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [products, setProducts] = useState<LocalProduct[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: products, isLoading } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => actor!.getAllProducts(),
-    enabled: !!actor,
-  });
+  useEffect(() => {
+    setProducts(loadLocalProducts());
+    setIsLoading(false);
+    const handler = () => setProducts(loadLocalProducts());
+    window.addEventListener("tkmart_products_updated", handler);
+    return () => window.removeEventListener("tkmart_products_updated", handler);
+  }, []);
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => actor!.getCategories(),
-    enabled: !!actor,
-  });
+  const { data: categories } = {
+    data: Array.from(
+      new Map(
+        products.map((p) => [
+          p.category,
+          { id: p.category, name: p.categoryName },
+        ]),
+      ).values(),
+    ).filter((c) => c.name),
+  };
 
-  const filtered = (products ?? []).filter((p: Product) => {
+  const filtered = products.filter((p: LocalProduct) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     const matchCat =
       selectedCategory === null || p.category === selectedCategory;
@@ -69,9 +76,9 @@ export default function ProductsPage() {
           >
             All
           </Button>
-          {(categories ?? []).map((cat) => (
+          {categories.map((cat) => (
             <Button
-              key={cat.id.toString()}
+              key={cat.id}
               variant={selectedCategory === cat.id ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedCategory(cat.id)}
@@ -104,9 +111,9 @@ export default function ProductsPage() {
           className="grid grid-cols-2 md:grid-cols-4 gap-4"
           data-ocid="products.list"
         >
-          {filtered.map((product: Product, idx: number) => (
+          {filtered.map((product: LocalProduct, idx: number) => (
             <Card
-              key={product.id.toString()}
+              key={String(product.id)}
               className="group hover:shadow-lg transition-shadow"
               data-ocid={`products.item.${idx + 1}`}
             >
@@ -114,7 +121,7 @@ export default function ProductsPage() {
                 <Link to={`/products/${product.id}`}>
                   <div className="aspect-square overflow-hidden rounded-t-xl bg-muted">
                     <img
-                      src={product.image.getDirectURL()}
+                      src={product.imageUrl || "/placeholder.png"}
                       alt={product.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       onError={handleImageError}
@@ -131,25 +138,25 @@ export default function ProductsPage() {
                     {formatPrice(product.price)}
                   </p>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Stock: {product.stock.toString()}
+                    Stock: {product.stock}
                   </p>
                   <Button
                     size="sm"
                     className="w-full text-xs"
-                    disabled={product.stock <= 0n}
+                    disabled={product.stock <= 0}
                     onClick={() => {
                       addItem({
-                        productId: product.id,
+                        productId: BigInt(product.id),
                         name: product.name,
-                        price: product.price,
-                        image: product.image.getDirectURL(),
+                        price: BigInt(product.price),
+                        image: product.imageUrl,
                       });
                       toast.success(`${product.name} added to cart`);
                     }}
                     data-ocid={`products.addcart.${idx + 1}`}
                   >
                     <ShoppingCart className="h-3 w-3 mr-1" />
-                    {product.stock <= 0n ? "Out of Stock" : "Add to Cart"}
+                    {product.stock <= 0 ? "Out of Stock" : "Add to Cart"}
                   </Button>
                 </div>
               </CardContent>
